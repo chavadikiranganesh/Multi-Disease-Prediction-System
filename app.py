@@ -21,15 +21,43 @@ db = SQLAlchemy(app)
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs('models', exist_ok=True)
 
-# --- Load Models (Error Handling Added) ---
+# --- Load Models (Individual Error Handling) ---
+heart_model = None
+kidney_model = None
+skin_model = None
+
+# Load Heart Model
 try:
     heart_model = pickle.load(open('models/heart_model.pkl', 'rb'))
-    kidney_model = pickle.load(open('models/kidney_model.pkl', 'rb'))
-    skin_model = tf.keras.models.load_model('models/skin_model.h5')
-    print("✅ All 3 Models loaded successfully.")
+    print("Heart model loaded successfully.")
 except Exception as e:
-    print(f"⚠️ Warning: Models not found. Ensure 'models/' folder exists. {e}")
-    heart_model = kidney_model = skin_model = None
+    print(f"Warning: Heart model not loaded. {e}")
+
+# Load Kidney Model  
+try:
+    kidney_model = pickle.load(open('models/kidney_model.pkl', 'rb'))
+    print("Kidney model loaded successfully.")
+except Exception as e:
+    print(f"Warning: Kidney model not loaded. {e}")
+
+# Load Skin Model
+try:
+    # Try to load with custom objects to handle compatibility
+    skin_model = tf.keras.models.load_model('models/skin_model.h5', compile=False)
+    print("Skin model loaded successfully.")
+except Exception as e:
+    print(f"Warning: Skin model not loaded. {e}")
+    # Try alternative loading method
+    try:
+        skin_model = tf.keras.models.load_model('models/skin_model.h5', custom_objects={'DepthwiseConv2D': tf.keras.layers.DepthwiseConv2D})
+        print("Skin model loaded with custom objects.")
+    except Exception as e2:
+        print(f"Alternative loading also failed: {e2}")
+        skin_model = None
+
+print(f"Models Status - Heart: {'Loaded' if heart_model else 'Not Loaded'}, "
+      f"Kidney: {'Loaded' if kidney_model else 'Not Loaded'}, "
+      f"Skin: {'Loaded' if skin_model else 'Not Loaded'}")
 
 # Skin Classes
 SKIN_CLASSES = [
@@ -81,6 +109,10 @@ def predict_heart():
     
     if request.method == 'POST':
         try:
+            if heart_model is None:
+                flash('Heart disease model not available. Please ensure model is trained.', 'error')
+                return render_template('tool_heart.html', prediction=None, alert_msg=None)
+            
             # Gather 13 inputs
             features = [
                 float(request.form['age']),
@@ -122,6 +154,10 @@ def predict_kidney():
     
     if request.method == 'POST':
         try:
+            if kidney_model is None:
+                flash('Kidney disease model not available. Please ensure model is trained.', 'error')
+                return render_template('tool_kidney.html', prediction=None, alert_msg=None)
+            
             # Gather 24 inputs
             # Numeric
             nums = [float(request.form[f]) for f in ['age','bp','sg','al','su','bgr','bu','sc','sod','pot','hemo','pcv','wc','rc']]
@@ -172,6 +208,10 @@ def predict_skin():
     alert_msg = None
     
     if request.method == 'POST':
+        if skin_model is None:
+            flash('Skin cancer model not available. Please ensure model is trained.', 'error')
+            return render_template('tool_skin.html', prediction=None, confidence=None, image_url=None, alert_msg=None)
+        
         file = request.files['file']
         if file:
             filename = secure_filename(file.filename)
